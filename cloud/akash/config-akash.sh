@@ -18,11 +18,103 @@ export AKASH_SIGN_MODE=amino-json
 
 #CHECKS IF AKASH CONFIGURATION IS SET UP PROPERLY
 ensure_akash_context() {
-  #CHECKS IF AKASH IS INSTALLED
+  # Validates Akash cli installation
   check_akash_version
-  #CHECK KEYS
+  # Akash keys menu
   check_keys  
-  
+  # Check akash network configuration.
+  check_backend_akash
+  # Make sure address is funded with at least 5 AKT.
+  check_balance
+  # Checks the key's certificate. If one does not exist, will make new one.
+  check_certificate
+  # Process deployment file.
+  ./process-yaml.sh
+  # Submit deployment to akash network
+  create_and_save_deployment
+  # Retrieve bids and saves to local file.
+  get_and_save_bids
+  # using local bids file, creates cli menu for the user to select a provider
+  select_provider_from_bids
+  # Create and submit lease agreement with provider to host consumer node.
+  create_lease
+  # Send file manifest to deployment.
+  send_manifest
+  #retrieve consumer and provider urls.
+  get_service_url
+
+}
+
+#helper function for ensure_akash_context
+check_akash_version() {
+    # ───────────────────────────────────────────────
+    # 🔍 Check if Akash CLI is installed
+    # ───────────────────────────────────────────────
+
+    if ! command -v akash >/dev/null 2>&1; then
+        echo "❌ Akash CLI is not installed or not in your PATH."
+        echo "👉 Please install it from: https://github.com/akash-network/node/releases"
+        echo "   or use Homebrew: brew install akash"
+    exit 1
+    fi
+
+    # Optionally show version info
+    AKASH_VERSION_INSTALLED=$(akash version 2>/dev/null || echo "unknown")
+    echo "✅ Akash CLI detected — version: $AKASH_VERSION_INSTALLED"
+    sleep 2
+}
+
+
+check_keys() {
+  echo "🔍 Checking for existing Akash keys..."
+  KEY_LIST=$(provider-services keys list --keyring-backend os 2>/dev/null)
+
+  # Extract key names into array
+  KEY_NAMES=($(echo "$KEY_LIST" | awk '/^- name:/ {print $3}'))
+
+  # If keys exist, let the user pick one
+  if [ ${#KEY_NAMES[@]} -gt 0 ]; then
+    echo -e "\n🔐 Found existing Akash wallets:"
+    SELECTED_KEY=$(printf "%s\n" "${KEY_NAMES[@]}" | gum choose --header="🎯 Select a wallet" --cursor="👉")
+
+    if [ -z "$SELECTED_KEY" ]; then
+      echo "❌ No wallet selected. Exiting."
+      exit 1
+    fi
+
+    export AKASH_KEY_NAME="$SELECTED_KEY"
+    echo "✅ Using wallet: $AKASH_KEY_NAME"
+
+  else
+    echo -e "\n⚠️ No wallets found in your Akash keyring."
+
+    WALLET_ACTION=$(gum choose --cursor="👉" "Create New Wallet" "Import Existing Wallet")
+
+    case "$WALLET_ACTION" in
+      "Create New Wallet")
+        read -rp "🆕 Enter a name for your new wallet key: " AKASH_KEY_NAME
+        AKASH_ACCOUNT_ADDRESS=provider-services keys add "$AKASH_KEY_NAME" --keyring-backend os
+        read -rp "👉 \n\nSAVE YOUR MNEMONIC PHRASE SOMEWHERE SAFE.\nThen, fund your Akash wallet with at least 5 AKT.\nPress Enter to continue..."
+        echo -e "✅ Created wallet: $AKASH_KEY_NAME"
+        ;;
+      "Import Existing Wallet")
+        read -rp "📥 Enter a name for your wallet: " AKASH_KEY_NAME
+        read -rp "🔑 Paste your 24-word mnemonic: " MNEMONIC
+        echo "$MNEMONIC" | provider-services keys add "$AKASH_KEY_NAME" --recover --keyring-backend os
+        echo -e "✅ Imported wallet: $AKASH_KEY_NAME"
+        ;;
+      *)
+        echo "❌ Invalid option. Exiting."
+        exit 1
+        ;;
+    esac
+
+    export AKASH_KEY_NAME="$AKASH_KEY_NAME"
+  fi
+}
+
+
+check_backend_akash() {
   # 💾 AKASH_KEYRING_BACKEND
   if [ -z "$AKASH_KEYRING_BACKEND" ]; then
     AKASH_KEYRING_BACKEND="os"
@@ -59,7 +151,7 @@ ensure_akash_context() {
   fi
   sleep 1.5
 
-  # ✅ Check if AKASH key exists
+  # ✅ Get AKASH wallet address
   if provider-services keys show "$AKASH_KEY_NAME" --keyring-backend "$AKASH_KEYRING_BACKEND" >/dev/null 2>&1; then
     export AKASH_ACCOUNT_ADDRESS=$(provider-services keys show "$AKASH_KEY_NAME" --keyring-backend "$AKASH_KEYRING_BACKEND" -a)
     echo "✅ Found Akash account for key '$AKASH_KEY_NAME': $AKASH_ACCOUNT_ADDRESS"
@@ -71,75 +163,6 @@ ensure_akash_context() {
   sleep 1.5
   echo "🎉 Akash context configured!"
   sleep 2
-}
-
-
-check_keys() {
-  echo "🔍 Checking for existing Akash keys..."
-  KEY_LIST=$(provider-services keys list --keyring-backend os 2>/dev/null)
-
-  # Extract key names into array
-  KEY_NAMES=($(echo "$KEY_LIST" | awk '/^- name:/ {print $3}'))
-
-  # If keys exist, let the user pick one
-  if [ ${#KEY_NAMES[@]} -gt 0 ]; then
-    echo -e "\n🔐 Found existing Akash wallets:"
-    SELECTED_KEY=$(printf "%s\n" "${KEY_NAMES[@]}" | gum choose --header="🎯 Select a wallet" --cursor="👉")
-
-    if [ -z "$SELECTED_KEY" ]; then
-      echo "❌ No wallet selected. Exiting."
-      exit 1
-    fi
-
-    export AKASH_KEY_NAME="$SELECTED_KEY"
-    echo "✅ Using wallet: $AKASH_KEY_NAME"
-
-  else
-    echo -e "\n⚠️ No wallets found in your Akash keyring."
-
-    WALLET_ACTION=$(gum choose --cursor="👉" "Create New Wallet" "Import Existing Wallet")
-
-    case "$WALLET_ACTION" in
-      "Create New Wallet")
-        read -rp "🆕 Enter a name for your new wallet key: " AKASH_KEY_NAME
-        provider-services keys add "$AKASH_KEY_NAME" --keyring-backend os
-        echo -e "✅ Created wallet: $AKASH_KEY_NAME"
-        ;;
-      "Import Existing Wallet")
-        read -rp "📥 Enter a name for your wallet: " AKASH_KEY_NAME
-        read -rp "🔑 Paste your 24-word mnemonic: " MNEMONIC
-        echo "$MNEMONIC" | provider-services keys add "$AKASH_KEY_NAME" --recover --keyring-backend os
-        echo -e "✅ Imported wallet: $AKASH_KEY_NAME"
-        ;;
-      *)
-        echo "❌ Invalid option. Exiting."
-        exit 1
-        ;;
-    esac
-
-    export AKASH_KEY_NAME="$AKASH_KEY_NAME"
-  fi
-}
-
-
-
-#helper function for ensure_akash_context
-check_akash_version() {
-    # ───────────────────────────────────────────────
-    # 🔍 Check if Akash CLI is installed
-    # ───────────────────────────────────────────────
-
-    if ! command -v akash >/dev/null 2>&1; then
-        echo "❌ Akash CLI is not installed or not in your PATH."
-        echo "👉 Please install it from: https://github.com/akash-network/node/releases"
-        echo "   or use Homebrew: brew install akash"
-    exit 1
-    fi
-
-    # Optionally show version info
-    AKASH_VERSION_INSTALLED=$(akash version 2>/dev/null || echo "unknown")
-    echo "✅ Akash CLI detected — version: $AKASH_VERSION_INSTALLED"
-    sleep 2
 }
 
 #Checks if user has sufficient balance
@@ -186,7 +209,7 @@ check_certificate() {
 
   # Query for valid certificates
   VALID_CERT_RESULT=$(provider-services query cert list \
-  --owner="$(provider-services keys show $AKASH_KEY_NAME -a)" \
+  --owner="${AKASH_ACCOUNT_ADDRESS}" \
   --state=valid \
   --node="$AKASH_NODE" \
   -o json)
@@ -208,11 +231,11 @@ check_certificate() {
     fi
 
     echo "🛠️ Generating client certificate..."
-    provider-services tx cert generate client --from="$AKASH_KEY_NAME" --keyring-backend="$AKASH_KEYRING_BACKEND"
+    provider-services tx cert generate client --from="$AKASH_KEY_NAME" --keyring-backend="$AKASH_KEYRING_BACKEND" --force
     sleep 1
 
     echo "📤 Publishing certificate to the chain..."
-    provider-services tx cert publish client --from="$AKASH_KEY_NAME" --chain-id="$AKASH_CHAIN_ID" --node="$AKASH_NODE" --yes --keyring-backend="$AKASH_KEYRING_BACKEND"
+    provider-services tx cert publish client --from="$AKASH_KEY_NAME" --chain-id="$AKASH_CHAIN_ID" --node="$AKASH_NODE" --yes --keyring-backend="$AKASH_KEYRING_BACKEND" --force
     sleep 1
 
     echo "✅ Certificate successfully generated and published!"
@@ -288,6 +311,7 @@ get_and_save_bids() {
   echo "✅ Found $BID_COUNT open bid(s). Saved to $BIDS_JSON"
 }
 
+
 select_provider_from_bids() {
   echo "Fetching bids..."
   sleep 5
@@ -345,6 +369,7 @@ select_provider_from_bids() {
   create_lease
 }
 
+
 create_lease() {
   local DEPLOYMENT_JSON="./bin/deployment_result.json"
 
@@ -383,6 +408,7 @@ create_lease() {
   send_manifest
 }
 
+
 send_manifest() {
   DEPLOY_FILE="./deploy.processed.yml"
   DEPLOYMENT_JSON="./bin/deployment_result.json"
@@ -408,6 +434,7 @@ send_manifest() {
   fi
   get_service_url
 }
+
 
 get_service_url() {
   DEPLOYMENT_JSON="./bin/deployment_result.json"
@@ -447,7 +474,6 @@ get_service_url() {
 
 
 ensure_akash_context
-#check_balance
 #check_certificate
 #./process-yaml.sh
 #create_and_save_deployment
