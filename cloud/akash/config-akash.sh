@@ -29,7 +29,7 @@ deploy_to_akash() {
   # Checks the key's certificate. If one does not exist, will make new one.
   check_certificate
   # Process deployment file.
-  ./process-yaml.sh
+  ./process-yml.sh
   # Submit deployment to akash network
   create_and_save_deployment
   # Retrieve bids and saves to local file.
@@ -40,8 +40,10 @@ deploy_to_akash() {
   create_lease
   # Send file manifest to deployment.
   send_manifest
-  #retrieve consumer and provider urls.
+  # Retrieve consumer and provider urls.
   get_service_url
+  # Update configuration with URLs.
+  update_configuration
 }
 
 # Ensures user has homebrew and akash cli installed
@@ -111,47 +113,64 @@ check_keys() {
   # Extract key names into array
   KEY_NAMES=($(echo "$KEY_LIST" | awk '/^- name:/ {print $3}'))
 
-  # If keys exist, let the user pick one
-  if [ ${#KEY_NAMES[@]} -gt 0 ]; then
-    echo -e "\n🔐 Found existing Akash wallets:"
-    SELECTED_KEY=$(printf "%s\n" "${KEY_NAMES[@]}" | gum choose --header="🎯 Select a wallet" --cursor="👉")
+  # Add option to create new wallet
+  OPTIONS=("${KEY_NAMES[@]}" "Create New Wallet")
 
-    if [ -z "$SELECTED_KEY" ]; then
-      echo "❌ No wallet selected. Exiting."
-      exit 1
+  if [ ${#OPTIONS[@]} -gt 0 ]; then
+    echo -e "\n🔐 Found wallets in your Akash keyring:"
+    SELECTED_KEY=$(printf "%s\n" "${OPTIONS[@]}" | gum choose --header="🎯 Select a wallet or create a new one" --cursor="👉")
+
+    if [ "$SELECTED_KEY" == "Create New Wallet" ]; then
+      WALLET_ACTION=$(gum choose --header="❓ Choose how to create your wallet" --cursor="👉" "Create Fresh Wallet" "Import Existing Wallet")
+
+      case "$WALLET_ACTION" in
+        "Create Fresh Wallet")
+          read -rp "🆕 Enter a name for your new wallet key: " AKASH_KEY_NAME
+          provider-services keys add "$AKASH_KEY_NAME" --keyring-backend os
+          echo -e "\n📄 Save your mnemonic phrase safely. Fund your wallet with at least 5 AKT before deploying."
+          read -rp "⏸️ Press Enter to continue..."
+          ;;
+        "Import Existing Wallet")
+          read -rp "📥 Enter a name for your wallet: " AKASH_KEY_NAME
+          read -rp "🔑 Paste your 24-word mnemonic: " MNEMONIC
+          echo "$MNEMONIC" | provider-services keys add "$AKASH_KEY_NAME" --recover --keyring-backend os
+          echo "✅ Wallet imported: $AKASH_KEY_NAME"
+          ;;
+        *)
+          echo "❌ Invalid selection. Exiting."
+          exit 1
+          ;;
+      esac
+    else
+      export AKASH_KEY_NAME="$SELECTED_KEY"
+      echo "✅ Using wallet: $AKASH_KEY_NAME"
     fi
-
-    export AKASH_KEY_NAME="$SELECTED_KEY"
-    echo "✅ Using wallet: $AKASH_KEY_NAME"
-
   else
-    echo -e "\n⚠️ No wallets found in your Akash keyring."
-
-    WALLET_ACTION=$(gum choose --cursor="👉" "Create New Wallet" "Import Existing Wallet")
+    echo "⚠️ No wallets found. Starting wallet creation..."
+    WALLET_ACTION=$(gum choose --header="❓ Choose how to create your wallet" --cursor="👉" "Create Fresh Wallet" "Import Existing Wallet")
 
     case "$WALLET_ACTION" in
-      "Create New Wallet")
+      "Create Fresh Wallet")
         read -rp "🆕 Enter a name for your new wallet key: " AKASH_KEY_NAME
-        AKASH_ACCOUNT_ADDRESS=provider-services keys add "$AKASH_KEY_NAME" --keyring-backend os
-        read -rp "👉 \n\nSAVE YOUR MNEMONIC PHRASE SOMEWHERE SAFE.\nThen, fund your Akash wallet with at least 5 AKT.\nPress Enter to continue..."
-        echo -e "✅ Created wallet: $AKASH_KEY_NAME"
+        provider-services keys add "$AKASH_KEY_NAME" --keyring-backend os
+        echo -e "\n📄 Save your mnemonic phrase safely. Fund your wallet with at least 5 AKT before deploying."
+        read -rp "⏸️ Press Enter to continue..."
         ;;
       "Import Existing Wallet")
         read -rp "📥 Enter a name for your wallet: " AKASH_KEY_NAME
         read -rp "🔑 Paste your 24-word mnemonic: " MNEMONIC
         echo "$MNEMONIC" | provider-services keys add "$AKASH_KEY_NAME" --recover --keyring-backend os
-        echo -e "✅ Imported wallet: $AKASH_KEY_NAME"
+        echo "✅ Wallet imported: $AKASH_KEY_NAME"
         ;;
       *)
-        echo "❌ Invalid option. Exiting."
+        echo "❌ Invalid selection. Exiting."
         exit 1
         ;;
     esac
-
-    export AKASH_KEY_NAME="$AKASH_KEY_NAME"
   fi
-}
 
+  export AKASH_KEY_NAME
+}
 
 check_backend_akash() {
   # 💾 AKASH_KEYRING_BACKEND
@@ -405,7 +424,6 @@ select_provider_from_bids() {
     echo "❌ Invalid selection."
     return 1
   fi
-  create_lease
 }
 
 
@@ -495,17 +513,50 @@ get_service_url() {
     if [[ -n "$PROXY_URI" && -n "$CONSUMER_URI" ]]; then
       echo "✅ nfa-proxy URL: https://$PROXY_URI"
       echo "✅ consumer-node URL: https://$CONSUMER_URI"
+      
+      export NFA_PROXY_URL="https://$PROXY_URI"
+      export CONSUMER_URL="https://$CONSUMER_URI"
 
-      echo "https://$PROXY_URI" > ./bin/proxy-url.txt
-      echo "https://$CONSUMER_URI" > ./bin/consumer-url.txt
       break
     else
       echo "⚠️ Deployment not ready. Waiting for URIs... Retrying in 10 seconds."
       sleep 10
     fi
   done
-
 }
+
+update_configuration() {
+  echo "🔧 Processing deployment config..."
+
+
+  echo "🌐 NFA_PROXY_URL: $NFA_PROXY_URL"
+  echo "🌐 CONSUMER_URL: $CONSUMER_URL"
+
+ 
+  ./process-yml.sh
+
+  if grep -q '\${' deploy.processed.yml; then
+    echo "❌ Variables were not substituted in deploy.processed.yml!"
+    return 1
+  fi
+
+  # Step 4: Get DSEQ from deployment JSON
+  DSEQ=$(jq -r '.logs[0].events[] | .attributes[] | select(.key=="dseq").value' ./bin/deployment_result.json | head -n1)
+
+  if [ -z "$DSEQ" ]; then
+    echo "❌ DSEQ not found. Make sure deployment_result.json exists and is valid."
+    return 1
+  fi
+
+  echo "📦 Submitting deployment update..."
+  provider-services tx deployment update deploy.processed.yml --dseq "$DSEQ" --from "$AKASH_KEY_NAME"
+
+  echo "🚀 Sending updated manifest to provider..."
+  provider-services send-manifest deploy.processed.yml --dseq "$DSEQ" --provider "$AKASH_PROVIDER" --from "$AKASH_KEY_NAME"
+
+  echo "✅ Deployment updated with new environment variables."
+}
+
 
 
 
