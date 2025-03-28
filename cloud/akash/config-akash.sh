@@ -20,6 +20,8 @@ export AKASH_SIGN_MODE=amino-json
 deploy_to_akash() {
   # Validates Akash cli installation
   check_akash_version
+  # Checks cli dependencies. 
+  check_dependencies
   # Akash keys menu
   check_keys  
   # Check akash network configuration.
@@ -59,7 +61,7 @@ check_akash_version() {
     if [[ "$INSTALL_AKASH" =~ ^[Yy]$ ]]; then
       # Check for Homebrew
       if ! command -v brew >/dev/null 2>&1; then
-        echo "🍺 Homebrew is not installed."
+        echo "🍺 Homebrew is not installed and required for deployment."
         read -rp "❓ Would you like to install Homebrew first? (y/n): " INSTALL_BREW
 
         if [[ "$INSTALL_BREW" =~ ^[Yy]$ ]]; then
@@ -105,11 +107,40 @@ check_akash_version() {
   sleep 2
 }
 
+check_dependencies() {
+  REQUIRED_CMDS=(bash akash curl jq awk sed bc grep tr head shuf mkdir read sleep echo gum)
+
+  echo "🔎 Checking required dependencies..."
+  sleep 2
+  MISSING_CMDS=()
+  for cmd in "${REQUIRED_CMDS[@]}"; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      MISSING_CMDS+=("$cmd")
+    fi
+  done
+
+  if [ "${#MISSING_CMDS[@]}" -eq 0 ]; then
+    echo "✅ All required dependencies are installed."
+    sleep 2
+    return
+  fi
+
+  echo -e "\n❌ Missing dependencies: ${MISSING_CMDS[*]}"
+
+  # Force install all missing dependencies
+  for cmd in "${MISSING_CMDS[@]}"; do
+    echo "📦 Installing missing dependency: $cmd"
+    brew install "$cmd"
+  done
+
+  echo "✅ All missing dependencies have been installed."
+}
+
 
 check_keys() {
   echo "🔍 Checking for existing Akash keys..."
+  sleep 2
   KEY_LIST=$(provider-services keys list --keyring-backend os 2>/dev/null)
-
   # Extract key names into array
   KEY_NAMES=($(echo "$KEY_LIST" | awk '/^- name:/ {print $3}'))
 
@@ -547,11 +578,6 @@ update_configuration() {
 
   echo "✅ Deployment updated with new environment variables."
 }
-
-
-
-
-
 
 
 deploy_to_akash
