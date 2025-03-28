@@ -1,7 +1,7 @@
 #!/bin/bash
 
-#AKASH ACCOUNT CONFIGURATION
-export AKASH_ACCOUNT_ADDRESS="$(provider-services keys show $AKASH_KEY_NAME -a)"
+export AKASH_KEY_NAME="" #Leave this blank if you do not have any keys
+
 
 #AKASH NETWORK CONFIGURATION
 export AKASH_NET="https://raw.githubusercontent.com/akash-network/net/main/mainnet"
@@ -17,7 +17,7 @@ export AKASH_SIGN_MODE=amino-json
 
 
 #CHECKS IF AKASH CONFIGURATION IS SET UP PROPERLY
-ensure_akash_context() {
+deploy_to_akash() {
   # Validates Akash cli installation
   check_akash_version
   # Akash keys menu
@@ -42,26 +42,65 @@ ensure_akash_context() {
   send_manifest
   #retrieve consumer and provider urls.
   get_service_url
-
 }
 
-#helper function for ensure_akash_context
+# Ensures user has homebrew and akash cli installed
 check_akash_version() {
-    # ───────────────────────────────────────────────
-    # 🔍 Check if Akash CLI is installed
-    # ───────────────────────────────────────────────
+  # ───────────────────────────────────────────────
+  # 🔍 Check if Akash CLI is installed
+  # ───────────────────────────────────────────────
 
-    if ! command -v akash >/dev/null 2>&1; then
-        echo "❌ Akash CLI is not installed or not in your PATH."
-        echo "👉 Please install it from: https://github.com/akash-network/node/releases"
-        echo "   or use Homebrew: brew install akash"
-    exit 1
+  if ! command -v akash >/dev/null 2>&1; then
+    echo "❌ Akash CLI is not installed or not in your PATH."
+    read -rp "❓ Would you like to install it now? (y/n): " INSTALL_AKASH
+
+    if [[ "$INSTALL_AKASH" =~ ^[Yy]$ ]]; then
+      # Check for Homebrew
+      if ! command -v brew >/dev/null 2>&1; then
+        echo "🍺 Homebrew is not installed."
+        read -rp "❓ Would you like to install Homebrew first? (y/n): " INSTALL_BREW
+
+        if [[ "$INSTALL_BREW" =~ ^[Yy]$ ]]; then
+          echo "📦 Installing Homebrew..."
+          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+          # Load Homebrew into PATH if necessary
+          if [[ -d "/opt/homebrew/bin" ]]; then
+            export PATH="/opt/homebrew/bin:$PATH"
+          elif [[ -d "/usr/local/bin" ]]; then
+            export PATH="/usr/local/bin:$PATH"
+          fi
+
+          if ! command -v brew >/dev/null 2>&1; then
+            echo "❌ Homebrew installation failed. Please install it manually from https://brew.sh"
+            exit 1
+          fi
+        else
+          echo "🚫 Cannot proceed without Homebrew. Exiting."
+          exit 1
+        fi
+      fi
+
+      echo "📦 Installing Akash CLI using Homebrew..."
+      brew tap akash-network/tap
+      brew install akash
+
+      if ! command -v akash >/dev/null 2>&1; then
+        echo "❌ Akash CLI installation failed. Please try installing manually."
+        exit 1
+      fi
+
+      echo "✅ Akash CLI installed successfully."
+    else
+      echo "🚫 Akash CLI installation canceled. Exiting."
+      exit 1
     fi
+  fi
 
-    # Optionally show version info
-    AKASH_VERSION_INSTALLED=$(akash version 2>/dev/null || echo "unknown")
-    echo "✅ Akash CLI detected — version: $AKASH_VERSION_INSTALLED"
-    sleep 2
+  # ✅ Confirm CLI is installed
+  AKASH_VERSION_INSTALLED=$(akash version 2>/dev/null || echo "unknown")
+  echo "✅ Akash CLI detected — version: $AKASH_VERSION_INSTALLED"
+  sleep 2
 }
 
 
@@ -473,9 +512,5 @@ get_service_url() {
 
 
 
-ensure_akash_context
-#check_certificate
-#./process-yaml.sh
-#create_and_save_deployment
-#get_and_save_bids
-#select_provider_from_bids
+deploy_to_akash
+
