@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #AKASH ACCOUNT CONFIGURATION
-export AKASH_KEY_NAME="myKey"
+export AKASH_KEY_NAME="myKey" #place the name of your
 export AKASH_KEYRING_BACKEND=os
 export AKASH_ACCOUNT_ADDRESS="$(provider-services keys show $AKASH_KEY_NAME -a)"
 
@@ -27,7 +27,7 @@ ensure_akash_context() {
 
   
   # 🔐 AKASH_KEY_NAME
-  AKASH_KEYS=$(provider-services keys list)
+  #AKASH_KEYS=$(provider-services keys list)
   if [ -z "$AKASH_KEY_NAME" ]; then
     AKASH_KEY_NAME="myDefaultKey"
     echo "🔐 AKASH_KEY_NAME not set — using default: $AKASH_KEY_NAME"
@@ -253,8 +253,8 @@ get_and_save_bids() {
 }
 
 select_provider_from_bids() {
-  echo "Finding bids"
-  sleep 10
+  echo "Fetching bids..."
+  sleep 5
   local BIDS_JSON="bids.json"
   local PROVIDER
   local BLOCKS_PER_MONTH=425066  # Matches Akash Console estimate
@@ -306,7 +306,7 @@ select_provider_from_bids() {
     echo "❌ Invalid selection."
     return 1
   fi
-
+  create_lease
 }
 
 create_lease() {
@@ -322,8 +322,6 @@ create_lease() {
     return 1
   fi
 
-  # Extract DSEQ from deployment result
-  DSEQ2=$(jq -r '.logs[0].events[] | select(.type=="akash.v1") | .attributes[] | select(.key=="dseq") | .value' "$DEPLOYMENT_JSON")
   
   if [ -z "$DSEQ" ]; then
     echo "❌ Failed to extract DSEQ from deployment result."
@@ -341,21 +339,19 @@ create_lease() {
 
   if [ $? -eq 0 ]; then
     echo "✅ Lease successfully created!"
-    export AKASH_DSEQ="$DSEQ"
     rm bids.json
   else
     echo "❌ Failed to create lease."
     return 1
   fi
+  send_manifest
 }
 
 send_manifest() {
   DEPLOY_FILE="./deploy.processed.yml"
   DEPLOYMENT_JSON="./bin/deployment_result.json"
 
-  # Extract DSEQ from saved deployment
-  DSEQ=$(jq -r '.logs[0].events[] | .attributes[] | select(.key=="dseq").value' "$DEPLOYMENT_JSON" | head -n1 | tr -d '\n')
-
+  
   if [ -z "$DSEQ" ] || [ -z "$AKASH_PROVIDER" ]; then
     echo "❌ Missing DSEQ or AKASH_PROVIDER"
     return 1
@@ -374,11 +370,11 @@ send_manifest() {
     echo "❌ Failed to send manifest."
     return 1
   fi
+  get_service_url
 }
 
 get_service_url() {
   DEPLOYMENT_JSON="./bin/deployment_result.json"
-  DSEQ=$(jq -r '.logs[0].events[] | .attributes[] | select(.key=="dseq").value' "$DEPLOYMENT_JSON" | head -n1 | tr -d '\n')
 
   if [ -z "$DSEQ" ] || [ -z "$AKASH_PROVIDER" ]; then
     echo "❌ Missing DSEQ or AKASH_PROVIDER"
@@ -421,6 +417,3 @@ check_certificate
 create_and_save_deployment
 get_and_save_bids
 select_provider_from_bids
-create_lease
-send_manifest
-get_service_url
