@@ -342,6 +342,7 @@ create_lease() {
   if [ $? -eq 0 ]; then
     echo "✅ Lease successfully created!"
     export AKASH_DSEQ="$DSEQ"
+    rm bids.json
   else
     echo "❌ Failed to create lease."
     return 1
@@ -376,9 +377,8 @@ send_manifest() {
 }
 
 get_service_url() {
-  sleep 30
   DEPLOYMENT_JSON="./bin/deployment_result.json"
-  DSEQ1=$(jq -r '.logs[0].events[] | .attributes[] | select(.key=="dseq").value' "$DEPLOYMENT_JSON" | head -n1 | tr -d '\n')
+  DSEQ=$(jq -r '.logs[0].events[] | .attributes[] | select(.key=="dseq").value' "$DEPLOYMENT_JSON" | head -n1 | tr -d '\n')
 
   if [ -z "$DSEQ" ] || [ -z "$AKASH_PROVIDER" ]; then
     echo "❌ Missing DSEQ or AKASH_PROVIDER"
@@ -387,21 +387,28 @@ get_service_url() {
 
   echo "🔎 Fetching deployment status and URL..."
 
-  STATUS=$(provider-services lease-status \
-    --dseq "$DSEQ" \
-    --provider "$AKASH_PROVIDER" \
-    --from "$AKASH_KEY_NAME" \
-    --node "$AKASH_NODE")
+  while true; do
+    STATUS=$(provider-services lease-status --dseq "$DSEQ" --from "$AKASH_KEY_NAME" --provider "$AKASH_PROVIDER" 2>/dev/null)
+    echo "$STATUS" > ./bin/lease_status.json
 
-  URI=$(echo "$STATUS" | jq -r '.services.web.uris[0] // empty')
+    PROXY_URI=$(echo "$STATUS" | jq -r '.services["nfa-proxy"].uris[0] // empty')
+    CONSUMER_URI=$(echo "$STATUS" | jq -r '.services["consumer-node"].uris[0] // empty')
 
-  if [ -n "$URI" ]; then
-    echo "✅ Deployed URL: https://$URI"
-    echo "$URI" > deployed-url.txt
-  else
-    echo "⚠️ Deployment is not ready yet, no URI found."
-  fi
+    if [[ -n "$PROXY_URI" && -n "$CONSUMER_URI" ]]; then
+      echo "✅ nfa-proxy URL: https://$PROXY_URI"
+      echo "✅ consumer-node URL: https://$CONSUMER_URI"
+
+      echo "https://$PROXY_URI" > ./bin/proxy-url.txt
+      echo "https://$CONSUMER_URI" > ./bin/consumer-url.txt
+      break
+    else
+      echo "⚠️ Deployment not ready. Waiting for URIs... Retrying in 10 seconds."
+      sleep 10
+    fi
+  done
+
 }
+
 
 
 
