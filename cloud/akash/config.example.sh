@@ -1,0 +1,66 @@
+
+# GCP Project Configuration
+export DOCKER_REGISTRY="docker.io/srt0422"  # Using Docker Hub registry instead of GCR
+export IMAGE_VERSION="1.0.40"
+
+
+# API Configuration
+export OPENAI_API_URL="" # Will be auto-populated during deployment with proxy URL
+export CONSUMER_URL="localhost:8080" # Will be auto-populated during deployment with consumer URL
+export MARKETPLACE_BASE_URL="${CONSUMER_URL}" # Uses consumer URL as base
+export MARKETPLACE_URL="${MARKETPLACE_BASE_URL}" # Full URL for marketplace completions
+export NFA_PROXY_URL="" # Will be auto-populated during deployment
+
+# Contract Configuration
+export DIAMOND_CONTRACT_ADDRESS="0xb8C55cD613af947E73E262F0d3C54b7211Af16CF" #Arbitrum-Sepolia
+export WALLET_PRIVATE_KEY="your-wallet-key" #DO NOT PASTE YOUR PRIVATE KEY INTO THIS FILE, INSERT VIA AKASH CONSOLE
+
+# Service Configuration 
+export INTERNAL_API_PORT="8080"  # Internal reference only, Cloud Run will provide PORT
+export MARKETPLACE_PORT="3333"
+export SESSION_DURATION="1h"
+export MOR_TOKEN_ADDRESS=0x34a285a1b1c166420df5b6630132542923b5b27e #Arbitrum-Sepolia
+
+# Authentication Configuration
+export CONSUMER_USERNAME="admin"  # Username for proxy and consumer node authentication
+export CONSUMER_PASSWORD="your-secure-password"  # Password for proxy and consumer node authentication
+
+# Container Versions (optional - defaults to 'latest' if not set)
+export NFA_PROXY_VERSION="v0.0.31"      # e.g. "v1.0.0" - for srt0422/openai-morpheus-proxy
+export CONSUMER_NODE_VERSION="v0.0.16"  # e.g. "v1.0.0" - for srt0422/morpheus-marketplace-consumer
+export VERSION="v1.0.22"
+
+# Consumer Node Configuration
+export BLOCKCHAIN_WS_URL="" # "wss://arbitrum-mainnet.infura.io/ws/v3/your-project-id"
+export BLOCKCHAIN_HTTP_URL="" # "https://arbitrum-mainnet.infura.io/v3/your-project-id" public endpoint - https://sepolia-rollup.arbitrum.io/rpc
+export LOG_LEVEL="info"
+export LOG_FORMAT="text"
+export PROVIDER_CACHE_TTL="60"
+export MAX_CONCURRENT_SESSIONS="100"
+export SESSION_TIMEOUT="3600"
+
+# Node Configuration
+export EXPLORER_API_URL="https://api-sepolia.arbiscan.io/api"
+export ETH_NODE_ADDRESS="${BLOCKCHAIN_WS_URL:-${BLOCKCHAIN_HTTP_URL:-https://sepolia-rollup.arbitrum.io/rpc}}"
+export ETH_NODE_LEGACY_TX="false"
+export PROXY_STORE_CHAT_CONTEXT="true"
+export PROXY_STORAGE_PATH="./data/"
+export LOG_COLOR="true"
+export ETH_NODE_USE_SUBSCRIPTIONS="false"
+export ETH_NODE_CHAIN_ID="421614" #Arbitrum-Sepolia, Arbitrum One = 42161
+export ENVIRONMENT="development"
+
+# Provider Model Configuration
+export MODEL_ID="default-model"
+# arbitrum sepolia testnet model
+export MODEL_NAME=LMR-Hermes-2-Theta-Llama-3-8B
+# mainnet arbitrum model 
+# export MODEL_NAME="Llama 3.2 3B Instruct"
+export MODEL_API_TYPE="openai"
+export MODEL_API_URL="http://default-endpoint:8080"
+export MODEL_API_KEY="default-key"
+export MODELS_BUCKET="your-models-bucket"
+
+export AKASH_KEY_NAME="myKey"
+
+
