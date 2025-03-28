@@ -1,8 +1,6 @@
 #!/bin/bash
 
 #AKASH ACCOUNT CONFIGURATION
-export AKASH_KEY_NAME="myKey" #place the name of your
-export AKASH_KEYRING_BACKEND=os
 export AKASH_ACCOUNT_ADDRESS="$(provider-services keys show $AKASH_KEY_NAME -a)"
 
 #AKASH NETWORK CONFIGURATION
@@ -17,25 +15,14 @@ export AKASH_GAS_ADJUSTMENT=1.25
 export AKASH_GAS_PRICES=0.0025uakt
 export AKASH_SIGN_MODE=amino-json
 
+
+#CHECKS IF AKASH CONFIGURATION IS SET UP PROPERLY
 ensure_akash_context() {
   #CHECKS IF AKASH IS INSTALLED
   check_akash_version
+  #CHECK KEYS
+  check_keys  
   
-  echo "🔧 Ensuring Akash context is set..."
-  sleep 1.5
-
-
-  
-  # 🔐 AKASH_KEY_NAME
-  #AKASH_KEYS=$(provider-services keys list)
-  if [ -z "$AKASH_KEY_NAME" ]; then
-    AKASH_KEY_NAME="myDefaultKey"
-    echo "🔐 AKASH_KEY_NAME not set — using default: $AKASH_KEY_NAME"
-  else
-    echo "🔐 AKASH_KEY_NAME already set: $AKASH_KEY_NAME"
-  fi
-  sleep 1.5
-
   # 💾 AKASH_KEYRING_BACKEND
   if [ -z "$AKASH_KEYRING_BACKEND" ]; then
     AKASH_KEYRING_BACKEND="os"
@@ -82,10 +69,59 @@ ensure_akash_context() {
     exit 1.5
   fi
   sleep 1.5
-
   echo "🎉 Akash context configured!"
   sleep 2
 }
+
+
+check_keys() {
+  echo "🔍 Checking for existing Akash keys..."
+  KEY_LIST=$(provider-services keys list --keyring-backend os 2>/dev/null)
+
+  # Extract key names into array
+  KEY_NAMES=($(echo "$KEY_LIST" | awk '/^- name:/ {print $3}'))
+
+  # If keys exist, let the user pick one
+  if [ ${#KEY_NAMES[@]} -gt 0 ]; then
+    echo -e "\n🔐 Found existing Akash wallets:"
+    SELECTED_KEY=$(printf "%s\n" "${KEY_NAMES[@]}" | gum choose --header="🎯 Select a wallet" --cursor="👉")
+
+    if [ -z "$SELECTED_KEY" ]; then
+      echo "❌ No wallet selected. Exiting."
+      exit 1
+    fi
+
+    export AKASH_KEY_NAME="$SELECTED_KEY"
+    echo "✅ Using wallet: $AKASH_KEY_NAME"
+
+  else
+    echo -e "\n⚠️ No wallets found in your Akash keyring."
+
+    WALLET_ACTION=$(gum choose --cursor="👉" "Create New Wallet" "Import Existing Wallet")
+
+    case "$WALLET_ACTION" in
+      "Create New Wallet")
+        read -rp "🆕 Enter a name for your new wallet key: " AKASH_KEY_NAME
+        provider-services keys add "$AKASH_KEY_NAME" --keyring-backend os
+        echo -e "✅ Created wallet: $AKASH_KEY_NAME"
+        ;;
+      "Import Existing Wallet")
+        read -rp "📥 Enter a name for your wallet: " AKASH_KEY_NAME
+        read -rp "🔑 Paste your 24-word mnemonic: " MNEMONIC
+        echo "$MNEMONIC" | provider-services keys add "$AKASH_KEY_NAME" --recover --keyring-backend os
+        echo -e "✅ Imported wallet: $AKASH_KEY_NAME"
+        ;;
+      *)
+        echo "❌ Invalid option. Exiting."
+        exit 1
+        ;;
+    esac
+
+    export AKASH_KEY_NAME="$AKASH_KEY_NAME"
+  fi
+}
+
+
 
 #helper function for ensure_akash_context
 check_akash_version() {
@@ -106,8 +142,8 @@ check_akash_version() {
     sleep 2
 }
 
-
-ensure_user_not_broke() {
+#Checks if user has sufficient balance
+check_balance() {
   while true; do
     echo "🔍 Checking your wallet balance..."
     sleep 1
@@ -411,9 +447,9 @@ get_service_url() {
 
 
 ensure_akash_context
-ensure_user_not_broke
-check_certificate
-./process-yaml.sh
-create_and_save_deployment
-get_and_save_bids
-select_provider_from_bids
+#check_balance
+#check_certificate
+#./process-yaml.sh
+#create_and_save_deployment
+#get_and_save_bids
+#select_provider_from_bids

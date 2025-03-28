@@ -13,7 +13,7 @@ export NFA_PROXY_URL="" # Will be auto-populated during deployment
 
 # Contract Configuration
 export DIAMOND_CONTRACT_ADDRESS="0xb8C55cD613af947E73E262F0d3C54b7211Af16CF" #Arbitrum-Sepolia
-export WALLET_PRIVATE_KEY="your-wallet-key" #DO NOT PASTE YOUR PRIVATE KEY INTO THIS FILE, INSERT VIA AKASH CONSOLE
+export WALLET_PRIVATE_KEY="your-wallet-key" #DO NOT PASTE YOUR PRIVATE KEY INTO THIS FILE, INSERT VIA AKASH CONSOLE. To do so, COPY the deploy.processed.yml via the update tab in the deployment menu.
 
 # Service Configuration 
 export INTERNAL_API_PORT="8080"  # Internal reference only, Cloud Run will provide PORT
@@ -61,6 +61,6 @@ export MODEL_API_URL="http://default-endpoint:8080"
 export MODEL_API_KEY="default-key"
 export MODELS_BUCKET="your-models-bucket"
 
-export AKASH_KEY_NAME="myKey"
+export AKASH_KEY_NAME=""
 
 

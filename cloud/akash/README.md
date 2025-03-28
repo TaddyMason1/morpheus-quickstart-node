@@ -1,6 +1,7 @@
 To run, simply move to the akash directory and run config-akash.sh.
 
 
+
 ensure you have proper akash cli keys configured. 
 
 current setup does not create key for user, only directs them how to. 
