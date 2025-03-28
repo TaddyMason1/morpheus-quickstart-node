@@ -525,18 +525,11 @@ get_service_url() {
 
 update_configuration() {
   echo "🔧 Processing deployment config..."
+  # Update PROXY_URL with trailing `/v1`
+  sed -i.bak "s|^      - PROXY_URL=.*|      - PROXY_URL=${NFA_PROXY_URL}/v1|" deploy.processed.yml
 
-
-  echo "🌐 NFA_PROXY_URL: $NFA_PROXY_URL"
-  echo "🌐 CONSUMER_URL: $CONSUMER_URL"
-
- 
-  ./process-yml.sh
-
-  if grep -q '\${' deploy.processed.yml; then
-    echo "❌ Variables were not substituted in deploy.processed.yml!"
-    return 1
-  fi
+  # Update CONSUMER_NODE_URL
+  sed -i.bak "s|^      - CONSUMER_NODE_URL=.*|      - CONSUMER_NODE_URL=${CONSUMER_URL}|" deploy.processed.yml
 
   # Step 4: Get DSEQ from deployment JSON
   DSEQ=$(jq -r '.logs[0].events[] | .attributes[] | select(.key=="dseq").value' ./bin/deployment_result.json | head -n1)
