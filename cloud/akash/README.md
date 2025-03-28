@@ -11,6 +11,13 @@ Use the following commands:
 ```bash
 cd ./cloud/akash
 ```
+### create new config file from config.example.sh
+```bash
+cp config.example.sh config.sh
+```
+Now configure your enviornmental variables. Current on chain environmental variables configured for arbitrum-sepolia. 
+
+
 ### Run deployment script.
 ```bash
 ./config-akash.sh
