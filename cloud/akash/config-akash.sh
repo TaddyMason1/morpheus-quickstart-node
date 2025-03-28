@@ -462,7 +462,6 @@ create_lease() {
     echo "❌ Failed to create lease."
     return 1
   fi
-  send_manifest
 }
 
 
@@ -489,7 +488,6 @@ send_manifest() {
     echo "❌ Failed to send manifest."
     return 1
   fi
-  get_service_url
 }
 
 
