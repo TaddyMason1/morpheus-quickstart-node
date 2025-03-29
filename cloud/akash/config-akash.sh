@@ -577,6 +577,10 @@ update_configuration() {
   provider-services send-manifest deploy.processed.yml --dseq "$DSEQ" --provider "$AKASH_PROVIDER" --from "$AKASH_KEY_NAME"
 
   echo "✅ Deployment updated with new environment variables."
+  sleep 1
+  echo "Please insert your ETH wallet private key through the akash cli in the update tab. Be sure to connect the same wallet you used to the akash console."
+  sleep 0.5
+  echo "If akash can not find you deployment file copy and paste deploy.processed.yml file\nfound in this directory and paste it into the Akash console."
 }
 
 
