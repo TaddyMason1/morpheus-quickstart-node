@@ -88,7 +88,7 @@ check_akash_version() {
       echo "📦 Installing Akash CLI using Homebrew..."
       brew tap akash-network/tap
       brew install akash
-
+      brew install akash-provider-services
       if ! command -v akash >/dev/null 2>&1; then
         echo "❌ Akash CLI installation failed. Please try installing manually."
         exit 1
