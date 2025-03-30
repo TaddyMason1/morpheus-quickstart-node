@@ -9,6 +9,7 @@ dist/
 out/
 .next/
 
+
 # Environment and secret files
 .env
 .env.production
@@ -67,6 +68,7 @@ node-red-example/.flows*.bak
 
 # testing
 /coverage
+testing
 
 # misc
 .code-workspace
@@ -77,3 +79,4 @@ config.sh
 # Cloud deployment configuration
 cloud/config.sh
 cloud/.env.tmp
+

@@ -1,7 +1,5 @@
 #!/bin/bash
 
-export AKASH_KEY_NAME="" #Leave this blank if you do not have any keys
-
 
 #AKASH NETWORK CONFIGURATION
 export AKASH_NET="https://raw.githubusercontent.com/akash-network/net/main/mainnet"
@@ -11,19 +9,23 @@ export AKASH_NODE="$(curl -s "$AKASH_NET/rpc-nodes.txt" | shuf -n 1)"
 
 #AKASH BID CONFIGURATION
 export AKASH_GAS=auto
-export AKASH_GAS_ADJUSTMENT=1.25
+export AKASH_GAS_ADJUSTMENT=1.5
 export AKASH_GAS_PRICES=0.0025uakt
 export AKASH_SIGN_MODE=amino-json
 
 
-#CHECKS IF AKASH CONFIGURATION IS SET UP PROPERLY
+# Deployment function
 deploy_to_akash() {
+  set -e
+
   # Validates Akash cli installation
-  check_akash_version
+  check_akash
+  #setup
+  setup
   # Checks cli dependencies. 
   check_dependencies
   # Akash keys menu
-  check_keys  
+  keys_menu  
   # Check akash network configuration.
   check_backend_akash
   # Make sure address is funded with at least 5 AKT.
@@ -48,71 +50,116 @@ deploy_to_akash() {
   update_configuration
 }
 
-# Ensures user has homebrew and akash cli installed
-check_akash_version() {
-  # ───────────────────────────────────────────────
-  # 🔍 Check if Akash CLI is installed
-  # ───────────────────────────────────────────────
+setup() {
+  BIN_ROOT="./bin"
+  HAS_BIN=false
+  HAS_KEYS=false
+  HAS_DEPLOYMENTS=false
 
-  if ! command -v akash >/dev/null 2>&1; then
-    echo "❌ Akash CLI is not installed or not in your PATH."
-    read -rp "❓ Would you like to install it now? (y/n): " INSTALL_AKASH
+  # Ensure bin directory exists
+  if [ ! -d "$BIN_ROOT" ]; then
+    mkdir -p "$BIN_ROOT"
+     
+  fi
+  HAS_BIN=true
+ 
 
-    if [[ "$INSTALL_AKASH" =~ ^[Yy]$ ]]; then
-      # Check for Homebrew
-      if ! command -v brew >/dev/null 2>&1; then
-        echo "🍺 Homebrew is not installed and required for deployment."
-        read -rp "❓ Would you like to install Homebrew first? (y/n): " INSTALL_BREW
+  # Check if any Akash keys exist using the CLI
+  KEY_LIST=$(akash keys list --keyring-backend os 2>/dev/null)
 
-        if [[ "$INSTALL_BREW" =~ ^[Yy]$ ]]; then
-          echo "📦 Installing Homebrew..."
-          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  # Extract key names from the list
+  KEY_NAMES=($(echo "$KEY_LIST" | awk '/^- name:/ {print $3}'))
 
-          # Load Homebrew into PATH if necessary
-          if [[ -d "/opt/homebrew/bin" ]]; then
-            export PATH="/opt/homebrew/bin:$PATH"
-          elif [[ -d "/usr/local/bin" ]]; then
-            export PATH="/usr/local/bin:$PATH"
-          fi
-
-          if ! command -v brew >/dev/null 2>&1; then
-            echo "❌ Homebrew installation failed. Please install it manually from https://brew.sh"
-            exit 1
-          fi
-        else
-          echo "🚫 Cannot proceed without Homebrew. Exiting."
-          exit 1
-        fi
-      fi
-
-      echo "📦 Installing Akash CLI using Homebrew..."
-      brew tap akash-network/tap
-      brew install akash
-      brew install akash-provider-services
-      if ! command -v akash >/dev/null 2>&1; then
-        echo "❌ Akash CLI installation failed. Please try installing manually."
-        exit 1
-      fi
-
-      echo "✅ Akash CLI installed successfully."
-    else
-      echo "🚫 Akash CLI installation canceled. Exiting."
-      exit 1
-    fi
+  # Set HAS_KEYS=true if we found any keys
+  if [ ${#KEY_NAMES[@]} -gt 0 ]; then
+    HAS_KEYS=true
+  else
+    HAS_KEYS=false
   fi
 
-  # ✅ Confirm CLI is installed
-  AKASH_VERSION_INSTALLED=$(akash version 2>/dev/null || echo "unknown")
-  echo "✅ Akash CLI detected — version: $AKASH_VERSION_INSTALLED"
-  sleep 2
+
+  # Check if any key dir has deployments
+  if [ "$HAS_KEYS" = true ]; then
+    for key_path in "${KEY_DIRS[@]}"; do
+      DSEQ_DIRS=($(find "$key_path" -mindepth 1 -maxdepth 1 -type d))
+      if [ ${#DSEQ_DIRS[@]} -gt 0 ]; then
+        HAS_DEPLOYMENTS=true
+        break
+      fi
+    done
+  fi
+
+  # Export the state flags
+  export HAS_BIN
+  export HAS_KEYS
+  export HAS_DEPLOYMENTS
+}
+
+# Ensures user has homebrew and akash cli installed
+check_akash() {
+  # Check for Internet
+  if ! ping -c 1 github.com >/dev/null 2>&1; then
+    echo "❌ No internet connection. Cannot proceed."
+    exit 1
+  fi
+
+  # Check if both tools are installed
+  if command -v akash >/dev/null && command -v provider-services >/dev/null; then
+    echo "✅ Akash CLI and provider-services already installed."
+    return
+  else
+    echo "❌ Akash CLI and/or provider-services not found."
+    read -rp "❓ Would you like to install them now? (y/n): " INSTALL_AKASH
+    [[ "$INSTALL_AKASH" =~ ^[Yy]$ ]] || { echo "🚫 Installation canceled. Exiting."; exit 1; }
+  fi
+
+  # Ensure Homebrew is installed
+  if ! command -v brew >/dev/null; then
+    echo "🍺 Homebrew is required but not installed."
+
+    read -rp "❓ Install Homebrew? (y/n): " INSTALL_BREW
+    [[ "$INSTALL_BREW" =~ ^[Yy]$ ]] || { echo "🚫 Cannot continue without Homebrew. Exiting."; exit 1; }
+
+    echo "📦 Installing Homebrew..."
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || {
+      echo "❌ Homebrew installation failed. Try manually from https://brew.sh"
+      exit 1
+    }
+
+    # Update PATH
+    [[ -d "/opt/homebrew/bin" ]] && export PATH="/opt/homebrew/bin:$PATH"
+    [[ -d "/usr/local/bin" ]] && export PATH="/usr/local/bin:$PATH"
+  fi
+
+  # Install Akash and provider-services
+  echo "📦 Installing Akash CLI tools via Homebrew..."
+  brew tap akash-network/tap
+  brew install akash || { echo "❌ Failed to install akash."; exit 1; }
+  brew install akash-provider-services || { echo "❌ Failed to install provider-services."; exit 1; }
+
+  echo "✅ Akash CLI and provider-services installed successfully."
+  echo "🔧 Version: $(akash version)"
 }
 
 check_dependencies() {
-  REQUIRED_CMDS=(bash akash curl jq awk sed bc grep tr head shuf mkdir read sleep echo gum)
-
   echo "🔎 Checking required dependencies..."
-  sleep 2
+  sleep 1
+
+  OS_TYPE=$(uname -s)
+  SHUF_CMD="shuf"
+
+  if [[ "$OS_TYPE" == "Darwin" ]]; then
+    # macOS needs gshuf (from coreutils)
+    SHUF_CMD="gshuf"
+    if ! command -v "$SHUF_CMD" >/dev/null 2>&1; then
+      echo "📦 Installing gshuf (coreutils) for macOS..."
+      brew install coreutils
+    fi
+  fi
+
+  REQUIRED_CMDS=(bash akash curl jq awk sed bc grep tr head mkdir read sleep echo gum "$SHUF_CMD")
   MISSING_CMDS=()
+
   for cmd in "${REQUIRED_CMDS[@]}"; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
       MISSING_CMDS+=("$cmd")
@@ -120,87 +167,71 @@ check_dependencies() {
   done
 
   if [ "${#MISSING_CMDS[@]}" -eq 0 ]; then
-    echo "✅ All required dependencies are installed."
-    sleep 2
+    echo "✅ All dependencies are installed."
     return
   fi
 
   echo -e "\n❌ Missing dependencies: ${MISSING_CMDS[*]}"
-
-  # Force install all missing dependencies
   for cmd in "${MISSING_CMDS[@]}"; do
-    echo "📦 Installing missing dependency: $cmd"
+    echo "📦 Installing $cmd..."
     brew install "$cmd"
   done
-
-  echo "✅ All missing dependencies have been installed."
 }
 
+keys_menu() {
+  # If no keys exist at all
+  if [ "$HAS_KEYS" = false ]; then
+    echo "⚠️ No Akash wallets found."
 
-check_keys() {
-  echo "🔍 Checking for existing Akash keys..."
-  sleep 2
-  KEY_LIST=$(provider-services keys list --keyring-backend os 2>/dev/null)
-  # Extract key names into array
-  KEY_NAMES=($(echo "$KEY_LIST" | awk '/^- name:/ {print $3}'))
-
-  # Add option to create new wallet
-  OPTIONS=("${KEY_NAMES[@]}" "Create New Wallet")
-
-  if [ ${#OPTIONS[@]} -gt 0 ]; then
-    echo -e "\n🔐 Found wallets in your Akash keyring:"
-    SELECTED_KEY=$(printf "%s\n" "${OPTIONS[@]}" | gum choose --header="🎯 Select a wallet or create a new one" --cursor="👉")
-
-    if [ "$SELECTED_KEY" == "Create New Wallet" ]; then
-      WALLET_ACTION=$(gum choose --header="❓ Choose how to create your wallet" --cursor="👉" "Create Fresh Wallet" "Import Existing Wallet")
-
-      case "$WALLET_ACTION" in
-        "Create Fresh Wallet")
-          read -rp "🆕 Enter a name for your new wallet key: " AKASH_KEY_NAME
-          provider-services keys add "$AKASH_KEY_NAME" --keyring-backend os
-          echo -e "\n📄 Save your mnemonic phrase safely. Fund your wallet with at least 5 AKT before deploying."
-          read -rp "⏸️ Press Enter to continue..."
-          ;;
-        "Import Existing Wallet")
-          read -rp "📥 Enter a name for your wallet: " AKASH_KEY_NAME
-          read -rp "🔑 Paste your 24-word mnemonic: " MNEMONIC
-          echo "$MNEMONIC" | provider-services keys add "$AKASH_KEY_NAME" --recover --keyring-backend os
-          echo "✅ Wallet imported: $AKASH_KEY_NAME"
-          ;;
-        *)
-          echo "❌ Invalid selection. Exiting."
-          exit 1
-          ;;
-      esac
-    else
-      export AKASH_KEY_NAME="$SELECTED_KEY"
-      echo "✅ Using wallet: $AKASH_KEY_NAME"
-    fi
-  else
-    echo "⚠️ No wallets found. Starting wallet creation..."
-    WALLET_ACTION=$(gum choose --header="❓ Choose how to create your wallet" --cursor="👉" "Create Fresh Wallet" "Import Existing Wallet")
-
-    case "$WALLET_ACTION" in
-      "Create Fresh Wallet")
-        read -rp "🆕 Enter a name for your new wallet key: " AKASH_KEY_NAME
-        provider-services keys add "$AKASH_KEY_NAME" --keyring-backend os
-        echo -e "\n📄 Save your mnemonic phrase safely. Fund your wallet with at least 5 AKT before deploying."
-        read -rp "⏸️ Press Enter to continue..."
-        ;;
-      "Import Existing Wallet")
-        read -rp "📥 Enter a name for your wallet: " AKASH_KEY_NAME
-        read -rp "🔑 Paste your 24-word mnemonic: " MNEMONIC
-        echo "$MNEMONIC" | provider-services keys add "$AKASH_KEY_NAME" --recover --keyring-backend os
-        echo "✅ Wallet imported: $AKASH_KEY_NAME"
-        ;;
-      *)
-        echo "❌ Invalid selection. Exiting."
-        exit 1
-        ;;
-    esac
+    create_new_key_menu
+    return
   fi
 
+  # Fetch key names from provider-services
+  KEY_LIST=$(provider-services keys list --keyring-backend os 2>/dev/null)
+  KEY_NAMES=($(echo "$KEY_LIST" | awk '/^- name:/ {print $3}'))
+
+  OPTIONS=("${KEY_NAMES[@]}" "Create New Wallet")
+
+  SELECTED_KEY=$(printf "%s\n" "${OPTIONS[@]}" | gum choose --header="🔐 Select a wallet or create a new one" --cursor="👉")
+
+  if [ "$SELECTED_KEY" == "Create New Wallet" ]; then
+    CREATE_NEW_KEY=true
+    create_new_key_menu
+  else
+    export AKASH_KEY_NAME="$SELECTED_KEY"
+    echo "✅ Using wallet: $AKASH_KEY_NAME"
+
+    # Optional: Create folder for this key if it doesn't exist
+    mkdir -p "./bin/$AKASH_KEY_NAME"
+  fi
+}
+
+#helper, do not call
+create_new_key_menu() {
+  ACTION=$(gum choose --header="🧠 How would you like to create your wallet?" --cursor="👉" "🆕 Create Fresh Wallet" "📥 Import Existing Wallet")
+
+  case "$ACTION" in
+    "🆕 Create Fresh Wallet")
+      read -rp "🔑 Enter a name for your new wallet key: " AKASH_KEY_NAME
+      provider-services keys add "$AKASH_KEY_NAME" --keyring-backend os
+      echo -e "\n📄 Save your mnemonic phrase safely. Fund your wallet with at least 5 AKT before continuing."
+      read -rp "⏸️ Press Enter to continue..."
+      ;;
+    "📥 Import Existing Wallet")
+      read -rp "🔑 Enter a name for your wallet key: " AKASH_KEY_NAME
+      read -rp "🧠 Paste your 24-word mnemonic: " MNEMONIC
+      echo "$MNEMONIC" | provider-services keys add "$AKASH_KEY_NAME" --recover --keyring-backend os
+      echo "✅ Wallet imported: $AKASH_KEY_NAME"
+      ;;
+    *)
+      echo "❌ Invalid selection. Exiting."
+      exit 1
+      ;;
+  esac
+
   export AKASH_KEY_NAME
+  mkdir -p "./bin/$AKASH_KEY_NAME"
 }
 
 check_backend_akash() {
@@ -211,7 +242,7 @@ check_backend_akash() {
   else
     echo "💾 AKASH_KEYRING_BACKEND already set: $AKASH_KEYRING_BACKEND"
   fi
-  sleep 1.5
+  sleep 1
 
   # 🌐 AKASH_NET
   if [ -z "$AKASH_NET" ]; then
@@ -220,7 +251,7 @@ check_backend_akash() {
   else
     echo "🌐 AKASH_NET already set: $AKASH_NET"
   fi
-  sleep 1.5
+  sleep 1
 
   # 🔗 AKASH_CHAIN_ID
   if [ -z "$AKASH_CHAIN_ID" ]; then
@@ -229,7 +260,7 @@ check_backend_akash() {
   else
     echo "🔗 AKASH_CHAIN_ID already set: $AKASH_CHAIN_ID"
   fi
-  sleep 1.5
+  sleep 1
 
   # 📡 AKASH_NODE
   if [ -z "$AKASH_NODE" ]; then
@@ -238,7 +269,7 @@ check_backend_akash() {
   else
     echo "📡 AKASH_NODE already set: $AKASH_NODE"
   fi
-  sleep 1.5
+  sleep 1
 
   # ✅ Get AKASH wallet address
   if provider-services keys show "$AKASH_KEY_NAME" --keyring-backend "$AKASH_KEYRING_BACKEND" >/dev/null 2>&1; then
@@ -247,9 +278,9 @@ check_backend_akash() {
   else
     echo "❌ No Akash account found with key name: $AKASH_KEY_NAME"
     echo "👉 Create one with: provider-services keys add $AKASH_KEY_NAME"
-    exit 1.5
+    exit 1
   fi
-  sleep 1.5
+  sleep 1
   echo "🎉 Akash context configured!"
   sleep 2
 }
@@ -347,7 +378,10 @@ create_and_save_deployment() {
     #MAYBE ASK IF THEY WANT TO CONTINUE WITH THEIR DEPLOYMENT
   else
     echo "🚀 Submitting deployment from $DEPLOY_FILE..."
-    DEPLOY_RESULT=$(provider-services tx deployment create "$DEPLOY_FILE" --from "$AKASH_KEY_NAME" --node "$AKASH_NODE" -y -o json)
+    DEPLOY_RESULT=$(provider-services tx deployment create "$DEPLOY_FILE" \
+      --from "$AKASH_KEY_NAME" \
+      --node "$AKASH_NODE" \
+      -y -o json)
 
     # Save formatted JSON to file
     echo "$DEPLOY_RESULT" | jq '.' > "$DEPLOYMENT_JSON"
@@ -379,26 +413,35 @@ get_and_save_bids() {
     return 1
   fi
 
-  echo "📡 Fetching bids for DSEQ: $DSEQ..."
-  sleep 10
-  BIDS_RESULT=$(provider-services query market bid list \
-    --owner="$AKASH_ACCOUNT_ADDRESS" \
-    --node="$AKASH_NODE" \
-    --dseq="$DSEQ" \
-    --state=open \
-    -o json)
+  attempt=1
+  max_attempts=3
 
-  echo "$BIDS_RESULT" | jq '.' > "$BIDS_JSON"
-  
-  # Check if any bids were returned
-  BID_COUNT=$(echo "$BIDS_RESULT" | jq '.bids | length')
-  if [ "$BID_COUNT" -eq 0 ]; then
-    echo "⚠️ No bids found yet. Providers may still be responding."
-    return 1
-  fi
+  while [ $attempt -le $max_attempts ]; do
+    echo "📡 Attempt $attempt: Fetching bids for DSEQ: $DSEQ..."
+    BIDS_RESULT=$(akash query market bid list \
+      --owner="$AKASH_ACCOUNT_ADDRESS" \
+      --node="$AKASH_NODE" \
+      --dseq="$DSEQ" \
+      --state=open \
+      -o json)
 
-  echo "✅ Found $BID_COUNT open bid(s). Saved to $BIDS_JSON"
+    echo "$BIDS_RESULT" | jq '.' > "$BIDS_JSON"
+
+    BID_COUNT=$(echo "$BIDS_RESULT" | jq '.bids | length')
+    if [ "$BID_COUNT" -gt 0 ]; then
+      echo "✅ Found $BID_COUNT open bid(s). Saved to $BIDS_JSON"
+      return 0
+    fi
+
+    echo "⚠️ No bids found. Retrying in 10 seconds..."
+    sleep 10
+    attempt=$((attempt + 1))
+  done
+
+  echo "❌ No bids received after $max_attempts attempts. Exiting."
+  exit 1
 }
+
 
 
 select_provider_from_bids() {
