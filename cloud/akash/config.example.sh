@@ -61,6 +61,5 @@ export MODEL_API_URL="http://default-endpoint:8080"
 export MODEL_API_KEY="default-key"
 export MODELS_BUCKET="your-models-bucket"
 
-export AKASH_KEY_NAME=""
 
 
